@@ -1,25 +1,25 @@
 # Securing Linux Containers
 
-## Table of contents
+# 1. Table of contents
 
 <!--toc:start-->
 - [Securing Linux Containers](#securing-linux-containers)
-  - [Table of contents](#table-of-contents)
-  - [Introduction](#introduction)
-  - [Secrets](#secrets)
-    - [Alternatives](#alternatives)
-      - [Files](#files)
-  - [Users and groups](#users-and-groups)
-  - [Filesystem](#filesystem)
-  - [Resources limits](#resources-limits)
-  - [Network](#network)
-  - [Images](#images)
-    - [Building](#building)
-    - [Scanning](#scanning)
-  - [Selinux](#selinux)
+- [1. Table of contents](#1-table-of-contents)
+- [2. Introduction](#2-introduction)
+- [3. Secrets](#3-secrets)
+  - [3.1 Alternatives](#31-alternatives)
+    - [3.1.1 Files](#311-files)
+- [4. Users and groups](#4-users-and-groups)
+- [5. Filesystem](#5-filesystem)
+- [6. Resources limits](#6-resources-limits)
+- [7. Network](#7-network)
+- [8. Images](#8-images)
+  - [8.1 Building](#81-building)
+  - [8.2 Scanning](#82-scanning)
+- [9. Selinux](#9-selinux)
 <!--toc:end-->
 
-## Introduction
+# 2. Introduction
 
 This document is a collection of simple and very generic tips and best
 practices related to seciurity of Linux containers. Contenerization is
@@ -30,7 +30,7 @@ Tips and best practices collected here should help raise awarness about
 how to keep containers really secure. Contents are kept container-engine
 agnostic, but examples will be based on actual implementations (Podman, k8s).
 
-## Secrets
+# 3. Secrets
 
 Secret is the most vulnerable data, as it usually can open access to other
 private data. They might also allow modification of the environment, which
@@ -50,9 +50,9 @@ is only an example of vulnerability which was considered to be more
 dangerous for contenerized apps, because of the vulnerability
 being based on gaining access to env variables.
 
-### Alternatives
+## 3.1 Alternatives
 
-#### Files
+### 3.1.1 Files
 
 Files with secrets are common and broadly supported. With proper setup they can
 be also very secure.
@@ -100,18 +100,18 @@ lrwxrwxrwx. 1 root root  32 Nov  9 14:00 ..data -> ..2024_11_09_14_00_47.4065932
 lrwxrwxrwx. 1 root root  18 Nov  9 14:00 secret.conf -> ..data/secret.conf
 ```
 
-## Users and groups
+# 4. Users and groups
 
-## Filesystem
+# 5. Filesystem
 
-## Resources limits
+# 6. Resources limits
 
-## Network
+# 7. Network
 
-## Images
+# 8. Images
 
-### Building
+## 8.1 Building
 
-### Scanning
+## 8.2 Scanning
 
-## Selinux
+# 9. Selinux
