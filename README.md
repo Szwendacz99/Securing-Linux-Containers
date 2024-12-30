@@ -9,7 +9,12 @@
 - [3. Secrets](#3-secrets)
   - [3.1 Alternatives](#31-alternatives)
     - [3.1.1 Files](#311-files)
+    - [3.1.2 Secrets Management Services (kubernetes)](#312-secrets-management-services-kubernetes)
 - [4. Users and groups](#4-users-and-groups)
+  - [Setting user and group](#setting-user-and-group)
+    - [Containerfile/Dockerfile](#containerfiledockerfile)
+    - [Changing user/group arbitrarily on container startup](#changing-usergroup-arbitrarily-on-container-startup)
+  - [Additional security](#additional-security)
 - [5. Filesystem](#5-filesystem)
 - [6. Resources limits](#6-resources-limits)
 - [7. Network](#7-network)
@@ -100,7 +105,113 @@ lrwxrwxrwx. 1 root root  32 Nov  9 14:00 ..data -> ..2024_11_09_14_00_47.4065932
 lrwxrwxrwx. 1 root root  18 Nov  9 14:00 secret.conf -> ..data/secret.conf
 ```
 
+### 3.1.2 Secrets Management Services (kubernetes)
+
+There are sophisticated tools for secret management and their deployment,
+available for kubernetes. For example HashiCorp Vault. It offers dynamic
+secrets, secret rotation, and access policies. Such tools are most helpfull in
+large environments and infrastructures, where secret management is split
+among many people.
+
+
+
 # 4. Users and groups
+
+Users and groups are standard mechanisms for security and permissions limiting
+in unix-like systems. Contenerization engines usually have possibility to
+arbitrarily assign them to the contenerized program process.
+
+> [!NOTE]
+> Both user and group can always be specified by numeric id even if no actual
+> user or group is assigned to them. When specifying with string name, the user
+> or group must exist **inside** of the container (`/etc/passwd`, `/etc/group`)
+
+> [!NOTE]
+> Processes of rootless containers or containers with uid/gid mapping have
+> different id's inside of container and outside. This can complicate things
+> even more, but that also usually greatly increases security.
+> In some scenarios such mapping can also cause trouble with files in
+> container image, if their id's are out of mapping range.
+
+## Setting user and group
+
+Containers have default user and group specified by Containerfile, but
+it can be changed when starting the container.
+
+### Containerfile/Dockerfile
+
+In Containerfile the user/group assignment might take place many times in
+single build. Typical reason for that is to have high privilige (root) during
+build, and then set default to unpriviliged user at the end of build, so that
+containers will use it by default.
+
+Setting just user to "user1"
+
+```Dockerfile
+USER user1
+```
+
+Setting both user and group
+```Dockerfile
+USER user1:group1
+```
+
+Setting just group
+```Dockerfile
+USER :group1
+```
+
+### Changing user/group arbitrarily on container startup
+
+Podman and Docker uses `--user` or shorter `-u` flag to specify both user and
+group. The syntax is the same as shown for Containerfile. Example:
+
+```bash
+❯ podman run --rm -it --user 1:bin registry.fedoraproject.org/fedora-minimal
+bash-5.2$ whoami
+bin
+bash-5.2$ groups
+bin
+bash-5.2$ grep ^bin /etc/passwd
+bin:x:1:1:bin:/bin:/usr/sbin/nologin
+bash-5.2$ grep ^bin /etc/group
+bin:x:1:
+```
+
+For Kubernetes, the user and group specification is located in pod definition:
+
+```yaml
+apiVersion: v1
+kind: Pod
+spec:
+  securityContext:
+    runAsUser: 1
+    runAsGroup: 1
+```
+
+> [!NOTE]
+> In kubernetes you can't specify user nor group using string name.
+> Only numeric values are allowed.
+
+## Additional security
+
+Linux kernel provides usefull feature - [No New Privileges Flag](https://docs.kernel.org/userspace-api/no_new_privs.html).
+If set for process, it prevents the process from gaining more privileges than
+parent process. This effectively blocks use of capabilities, and setgid,setuid
+flags on files, which are known and powerfull tools for exploitation.
+
+In Podman and Docker, the flag can be enabled using parameter `--security-opt no-new-privileges`
+
+In Kubernetes, there is section related to security context per container:
+
+```yaml
+(....)
+  containers:
+  - name: mycontainer
+    securityContext:
+      allowPrivilegeEscalation: false
+(....)
+````
 
 # 5. Filesystem
 
