@@ -1,30 +1,34 @@
 # Securing Linux Containers
 
-# 1. Table of contents
+## 1. Table of contents
 
 <!--toc:start-->
+
 - [Securing Linux Containers](#securing-linux-containers)
-- [1. Table of contents](#1-table-of-contents)
-- [2. Introduction](#2-introduction)
-- [3. Secrets](#3-secrets)
-  - [3.1 Alternatives](#31-alternatives)
-    - [3.1.1 Files](#311-files)
-    - [3.1.2 Secrets Management Services (kubernetes)](#312-secrets-management-services-kubernetes)
-- [4. Users and groups](#4-users-and-groups)
-  - [Setting user and group](#setting-user-and-group)
-    - [Containerfile/Dockerfile](#containerfiledockerfile)
-    - [Changing user/group arbitrarily on container startup](#changing-usergroup-arbitrarily-on-container-startup)
-  - [Additional security](#additional-security)
-- [5. Filesystem](#5-filesystem)
-- [6. Resources limits](#6-resources-limits)
-- [7. Network](#7-network)
-- [8. Images](#8-images)
+  - [1. Table of contents](#1-table-of-contents)
+  - [2. Introduction](#2-introduction)
+  - [3. Secrets](#3-secrets)
+    - [3.1 Alternatives](#31-alternatives)
+      - [3.1.1 Files](#311-files)
+      - [3.1.2 Secrets Management Services (kubernetes)](#312-secrets-management-services-kubernetes)
+  - [4. Users and groups](#4-users-and-groups)
+    - [Setting user and group](#setting-user-and-group)
+      - [Containerfile/Dockerfile](#containerfiledockerfile)
+      - [Changing user/group arbitrarily on container startup](#changing-usergroup-arbitrarily-on-container-startup)
+    - [Additional security](#additional-security)
+  - [5. Filesystem](#5-filesystem)
+    - [Read-only](#read-only)
+    - [Additional Protection with nosuid, noexec, and nodev](#additional-protection-with-nosuid-noexec-and-nodev)
+  - [6. Resources limits](#6-resources-limits)
+  - [7. Network](#7-network)
+  - [8. Images](#8-images)
   - [8.1 Building](#81-building)
   - [8.2 Scanning](#82-scanning)
-- [9. Selinux](#9-selinux)
+  - [9. Selinux](#9-selinux)
+
 <!--toc:end-->
 
-# 2. Introduction
+## 2. Introduction
 
 This document is a collection of simple and very generic tips and best
 practices related to seciurity of Linux containers. Contenerization is
@@ -35,7 +39,7 @@ Tips and best practices collected here should help raise awarness about
 how to keep containers really secure. Contents are kept container-engine
 agnostic, but examples will be based on actual implementations (Podman, k8s).
 
-# 3. Secrets
+## 3. Secrets
 
 Secret is the most vulnerable data, as it usually can open access to other
 private data. They might also allow modification of the environment, which
@@ -55,20 +59,20 @@ is only an example of vulnerability which was considered to be more
 dangerous for contenerized apps, because of the vulnerability
 being based on gaining access to env variables.
 
-## 3.1 Alternatives
+### 3.1 Alternatives
 
-### 3.1.1 Files
+#### 3.1.1 Files
 
 Files with secrets are common and broadly supported. With proper setup they can
 be also very secure.
 
 - Keep configuration and secret files on entirely different path than other data
 - If application runs main process under different user than worker processes
-(which usually have direct contact with user interaction), the configuration
-should not be readable by the worker process user.
+  (worker usually have direct contact with user interaction), the configuration
+  should not be readable by the worker process user.
 - Depending on the technology used, storage of the secret files inside of a
-container could be temporary/volatile. In kubernetes Secret objects are mounted
-as tmpfs. Example for mounting secret as tmpfs in pod:
+  container could be temporary/volatile. In kubernetes Secret objects are mounted
+  as tmpfs. Example for mounting secret as tmpfs in pod:
 
 ```yaml
 apiVersion: v1
@@ -105,7 +109,7 @@ lrwxrwxrwx. 1 root root  32 Nov  9 14:00 ..data -> ..2024_11_09_14_00_47.4065932
 lrwxrwxrwx. 1 root root  18 Nov  9 14:00 secret.conf -> ..data/secret.conf
 ```
 
-### 3.1.2 Secrets Management Services (kubernetes)
+#### 3.1.2 Secrets Management Services (kubernetes)
 
 There are sophisticated tools for secret management and their deployment,
 available for kubernetes. For example HashiCorp Vault. It offers dynamic
@@ -113,9 +117,7 @@ secrets, secret rotation, and access policies. Such tools are most helpfull in
 large environments and infrastructures, where secret management is split
 among many people.
 
-
-
-# 4. Users and groups
+## 4. Users and groups
 
 Users and groups are standard mechanisms for security and permissions limiting
 in unix-like systems. Contenerization engines usually have possibility to
@@ -133,12 +135,12 @@ arbitrarily assign them to the contenerized program process.
 > In some scenarios such mapping can also cause trouble with files in
 > container image, if their id's are out of mapping range.
 
-## Setting user and group
+### Setting user and group
 
 Containers have default user and group specified by Containerfile, but
 it can be changed when starting the container.
 
-### Containerfile/Dockerfile
+#### Containerfile/Dockerfile
 
 In Containerfile the user/group assignment might take place many times in
 single build. Typical reason for that is to have high privilige (root) during
@@ -152,19 +154,22 @@ USER user1
 ```
 
 Setting both user and group
+
 ```Dockerfile
 USER user1:group1
 ```
 
 Setting just group
+
 ```Dockerfile
 USER :group1
 ```
 
-### Changing user/group arbitrarily on container startup
+#### Changing user/group arbitrarily on container startup
 
 Podman and Docker uses `--user` or shorter `-u` flag to specify both user and
-group. The syntax is the same as shown for Containerfile. Example:
+group. The syntax is the same as shown for Containerfile. Example of
+setting both user and group to bin, but user is specified with number ID:
 
 ```bash
 ❯ podman run --rm -it --user 1:bin registry.fedoraproject.org/fedora-minimal
@@ -193,7 +198,7 @@ spec:
 > In kubernetes you can't specify user nor group using string name.
 > Only numeric values are allowed.
 
-## Additional security
+### Additional security
 
 Linux kernel provides usefull feature - [No New Privileges Flag](https://docs.kernel.org/userspace-api/no_new_privs.html).
 If set for process, it prevents the process from gaining more privileges than
@@ -211,18 +216,99 @@ In Kubernetes, there is section related to security context per container:
     securityContext:
       allowPrivilegeEscalation: false
 (....)
-````
+```
 
-# 5. Filesystem
+## 5. Filesystem
 
-# 6. Resources limits
+By default the filesystem security of containers is quite good, specially
+when used with other mechanisms like selinux or mapped UIDs/GIDs, but it
+still have field for improvement.
 
-# 7. Network
+### Read-only
 
-# 8. Images
+Both base filesystem and mounted volumes can be set to readonly.
+When using a read-only filesystem, certain directories may still need to be
+writable, such as /tmp or /var/tmp. This is where tmpfs (temporary filesystem)
+can be used. tmpfs filesystem mounts a temporary filesystem in memory, allowing these
+directories to be writable without compromising the overall read-only nature
+of the filesystem. The directory will be empty and will vanish on container
+shutdown which also increases security, if the temporary data is vulnerable.
+
+Running Podman container with readonly base filesystem using `--read-only`:
+
+```bash
+podman run --rm -it --read-only registry.fedoraproject.org/fedora-minimal
+```
+
+> [!Note]
+> Podman simplifies use of --read-only by automatically creating read-write
+> tmpfs mounts inside in places where it is usually needed, like `/dev/shm`,
+> `/tmp`, `/run`, etc...
+
+Mounting tmpfs dir with specific size limit to Podman container using `--tmpfs`:
+
+```bash
+podman run --rm -it --read-only --tmpfs /tmp:rw,size=64m registry.fedoraproject.org/fedora-minimal
+```
+
+Mounting podman volume as read-only is done by specifying `ro` mount option
+after `:` separator, for example `--tmpfs /test:ro`, `-v /host/path:/container/path:ro`
+
+On Kubernetes to set base filesystem of a container to read-only, there is
+`readOnlyRootFilesystem: true` attribute in container security context, and to
+mount any volume as read-only, there is attribute `readOnly: true` in mount
+section.
+
+Full kubernetes example of read-only base filesystem and example volume:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: readonly-pod
+spec:
+  containers:
+  - name: mycontainer
+    image: registry.fedoraproject.org/fedora-minimal:latest
+    command: ["sleep", "infinity"]
+    securityContext:
+      readOnlyRootFilesystem: true
+    volumeMounts:
+    - mountPath: /test
+      readOnly: true
+      name: tmpfs
+  volumes:
+  - name: tmpfs
+    emptyDir:
+      medium: Memory
+      sizeLimit: 64Mi
+```
+
+### Additional Protection with nosuid, noexec, and nodev
+
+To further enhance security, you can use the nosuid, noexec, and nodev mount
+options for volumes. They can also be used for tmpfs mounts.
+
+- nosuid: Prevents the execution of set-user-identifier or set-group-identifier programs.
+- noexec: Prevents the execution of any binaries on the mounted filesystem.
+- nodev: Prevents the use of device files on the mounted filesystem.
+
+Example using Podman:
+
+```bash
+❯ podman run --rm -it --read-only --tmpfs /test:nodev,nosuid,noexec registry.fedoraproject.org/fedora-minimal
+bash-5.2# mount | grep /test
+tmpfs on /test type tmpfs (rw,nosuid,nodev,noexec,relatime,context="system_u:object_r:container_file_t:s0:c240,c646",uid=1000,gid=1000,inode64)
+```
+
+## 6. Resources limits
+
+## 7. Network
+
+## 8. Images
 
 ## 8.1 Building
 
 ## 8.2 Scanning
 
-# 9. Selinux
+## 9. Selinux
