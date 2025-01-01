@@ -20,7 +20,11 @@
     - [Read-only](#read-only)
     - [Additional Protection with nosuid, noexec, and nodev](#additional-protection-with-nosuid-noexec-and-nodev)
   - [6. Resources limits](#6-resources-limits)
+    - [CPU](#cpu)
+    - [RAM](#ram)
   - [7. Network](#7-network)
+    - [Desktop tools](#desktop-tools)
+    - [Kubernetes](#kubernetes)
   - [8. Images](#8-images)
   - [8.1 Building](#81-building)
   - [8.2 Scanning](#82-scanning)
@@ -30,8 +34,8 @@
 
 ## 2. Introduction
 
-This document is a collection of simple and very generic tips and best
-practices related to seciurity of Linux containers. Contenerization is
+This document is a collection of simple, very generic tips and best
+practices related to security of Linux containers. Contenerization is
 considered safer by default, but then one can hear about discovered
 vulnerabilities that are primarly bad for applications in containers
 (Example: [CVE-2023-49103](https://nvd.nist.gov/vuln/detail/CVE-2023-49103)).
@@ -303,7 +307,95 @@ tmpfs on /test type tmpfs (rw,nosuid,nodev,noexec,relatime,context="system_u:obj
 
 ## 6. Resources limits
 
+Setting resource limits for containers is required to ensure that no single
+container can consume excessive resources, which could impact the performance
+and stability of the entire system or neighbour systems.
+
+### CPU
+
+Since there is no virtualization, the cpu is visible with all its cores and
+threads inside of a container. Therefore cpu limiting is done by limiting
+cpu time using scheduler. Usually the limitation unit is vCPU. In Podman
+you can set the limit using `--cpus` flag. For example `--cpus=2` will limit
+cpu time to 2/X of total cpu time current host have. In case of cpu with 16
+threads this means that container can use up to 12.5% of whole cpu power. This
+does not mean assigning the cpu time to specific physical threads, therefore
+high load in that container will be loadbalanced on all physical threads.
+
+In case of Kubernetes this works the same, limits are specified per container:
+
+```yaml
+(....)
+spec:
+  containers:
+  - name: app
+    resources:
+      limits:
+        cpu: "2"
+(....)
+```
+
+### RAM
+
+Limiting RAM for container looks similar to cpu limiting. Except that
+when software inside of a container tries to cross the limits, it will be
+handled more brutally - RAM hungry process will be killed. This might be
+not that intuitive for application, as here again the app sees all the memory
+available in host system, and it does not know about the limits (unless
+configured).
+
+Podman have simple flag `--memory` which configures the limit. `--memory=512MiB`
+will limit to 512MiB.
+
+Kubernetes works similar:
+
+```yaml
+(....)
+spec:
+  containers:
+  - name: app
+    resources:
+      limits:
+        memory: "512Mi"
+(....)
+```
+
 ## 7. Network
+
+For network isolation, Linux containers leverage network namespaces.
+
+A network namespace is a feature provided by the Linux kernel that allows for
+the creation of isolated, independent network stacks. Each network namespace
+has its own separate set of network interfaces, routing tables, firewall
+rules, and other network-related resources. This gives complex possibilities
+for network configuration, but it stimulates differences between
+container engine implementations.
+Additionally rootless containers, which are considered safer, need
+to fallback to different network components, with reduced
+possibilities, as managing network is strictly root based.
+
+### Desktop tools
+
+Container engines suitable for desktop like Podman usage usually have limited
+options for network configuration. They allow to isolate pods from host and
+each other with different network addresses pools, and even disabling the
+network at all, which is very safe, but very rare.
+
+For such tools there could be few rules that should increase security:
+
+- Don't disable isolation. Isolation makes access harder for remote attacker,
+  even if he can access any port on the container host machine.
+- when opening ports to access the app from outside, set binding to the least
+  accessible but sufficient interface/address. For example If you expect only
+  to access the app locally over localhost, you could bind to localhost in
+  Podman using flag: `-p 127.0.0.1:8080:8080` to open the port 8080
+  only for localhost
+
+### Kubernetes
+
+Kubernetes gives much greater possibilities for both ingress and egress.
+Primary tools for that are NetworkPolcicies, which are implemented via plugins
+(therefore they might be not available on some k8s clusters).
 
 ## 8. Images
 
