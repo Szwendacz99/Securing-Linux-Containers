@@ -259,7 +259,7 @@ Mounting podman volume as read-only is done by specifying `ro` mount option
 after `:` separator, for example `--tmpfs /test:ro`, `-v /host/path:/container/path:ro`
 
 On Kubernetes to set base filesystem of a container to read-only, there is
-`readOnlyRootFilesystem: true` attribute in container security context, and to
+`readOnlyRootFilesystem: true` attribute in container security context. To
 mount any volume as read-only, there is attribute `readOnly: true` in mount
 section.
 
@@ -320,7 +320,8 @@ you can set the limit using `--cpus` flag. For example `--cpus=2` will limit
 cpu time to 2/X of total cpu time current host have. In case of cpu with 16
 threads this means that container can use up to 12.5% of whole cpu power. This
 does not mean assigning the cpu time to specific physical threads, therefore
-high load in that container will be loadbalanced on all physical threads.
+high load in that container will be loadbalanced on all physical threads,
+without allowing to utilize too much of time.
 
 In case of Kubernetes this works the same, limits are specified per container:
 
@@ -385,7 +386,7 @@ For such tools there could be few rules that should increase security:
 
 - Don't disable isolation. Isolation makes access harder for remote attacker,
   even if he can access any port on the container host machine.
-- when opening ports to access the app from outside, set binding to the least
+- When opening ports to access the app from outside, set binding to the least
   accessible but sufficient interface/address. For example If you expect only
   to access the app locally over localhost, you could bind to localhost in
   Podman using flag: `-p 127.0.0.1:8080:8080` to open the port 8080
@@ -394,13 +395,149 @@ For such tools there could be few rules that should increase security:
 ### Kubernetes
 
 Kubernetes gives much greater possibilities for both ingress and egress.
-Primary tools for that are NetworkPolcicies, which are implemented via plugins
+Primary tools for that are Network Polcicies, which are implemented via plugins
 (therefore they might be not available on some k8s clusters).
 
-## 8. Images
+Network Policies allow for very accurate limitation of network traffic,
+thanks to their possibilities:
+
+- Using labels to select the pods to which the network policy
+  applies. This allows you to target specific groups of pods based on their labels.
+- Applying network policies across namespaces by selecting
+  namespaces based on their labels.
+- Defining rules based on specific protocols (TCP, UDP) and ports to allow or deny traffic.
+- Support for arbitrary CIDR-formatted network addresses ranges.
+
+Example network policy definition:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: example
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: app1
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: app
+      ports:
+      - protocol: TCP
+        port: 123
+      - protocol: TCP
+        port: 456
+    - from:
+      - ipBlock:
+          cidr: 10.43.0.0/16
+      - ipBlock:
+          cidr: fe80::8cb6:aff8:8dc9:f511/64
+      ports:
+      - protocol: TCP
+        port: 443
+  egress:
+    - to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: kube-system
+      ports:
+      - protocol: UDP
+        port: 53
+    - to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: db
+      ports:
+      - protocol: TCP
+        port: 5432
+```
+
+## 8. OCI Images
+
+Containers technically don't require images, the base filesystem can be
+provided in different way, but OCI images become standard in the industry.
+Images are another important element of (in)security in contenerization.
+It is crucial to understand basics of that format, as it can for example leak
+secrets to the public, if used incorrectly.
 
 ## 8.1 Building
 
+It is obvious that one should not hardcode secrets into an image. Unfortunately
+less users is aware how not to do that. When building an image, any instruction
+that can modify filesystem of the built image, will be saved separately as a
+layer. By default each layer is kept in the image, even, when in the end all
+contents of some of those layers was removed.
+
+Example of **insecure** Containerfile:
+
+```Dockerfile
+FROM registry.fedoraproject.org/fedora-minimal
+
+# Copy secret into the image (bad practice)
+COPY secret.txt ./secret.txt
+
+# Use and delete secret (but it's still in a previous layer)
+RUN cat secret.txt && rm secret.txt
+```
+
+There is a way to modify image-to-be filesystem in much more secure manner,
+which also brings other benefits. It is called multi-stage build and, as the
+name suggests, contains multiple stages, where only layers of the latest will
+be saved in the resulting image.
+
+The Containerfile can look like that:
+
+```dockerfile
+# Stage 1: Use secret during the build
+FROM registry.fedoraproject.org/fedora-minimal AS builder
+
+WORKDIR /app
+
+# Copy application files
+COPY app/ /app/
+
+# Copy the secret into the build stage
+COPY secret.txt /app/secret.txt
+
+# Use the secret securely (e.g., configure app)
+RUN cat /app/secret.txt && echo "Configuring app with secret" > config.txt
+
+# Removing the secret in this example is needed, because in the next stage
+# the /app dir will be copied as a whole
+RUN rm /app/secret.txt
+
+# Stage 2: Final image without secrets
+FROM registry.fedoraproject.org/fedora-minimal
+
+# Nothing is saved from previous stage
+WORKDIR /app
+
+# Copy only the necessary files from the builder stage
+COPY --from=builder /app/ /app/
+```
+
+This approach also helps keeping the images minimal, without any other
+leftovers, which also can improve security.
+
 ## 8.2 Scanning
+
+Images can be scanned for vulnerabilities. This is usefull for any type and
+source if images, since vulnerabilities appear even in the most basic
+components like language interpreters, libC libraries, etc. There are tools
+for manual scanning like [trivy](https://github.com/aquasecurity/trivy), and
+some registries like [Harbor](https://goharbor.io/) have builting optional 
+automatic vulnerability scanning for any stored image.
+
+These tools can provide descriptive analysis of image contents, taking into
+account versions of most software stored inside (if supported).
+
+Example fragment of output of trivy scanning a python image:
+
+![trivy](./trivy.jpg)
 
 ## 9. Selinux
