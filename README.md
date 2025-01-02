@@ -541,3 +541,35 @@ Example fragment of output of trivy scanning a python image:
 ![trivy](./trivy.jpg)
 
 ## 9. Selinux
+
+SELinux (Security-Enhanced Linux) is a security module for Linux that enforces
+mandatory access control (MAC) policies to restrict the actions of users and
+applications based on predefined rules, enhancing system security. SELinux
+works by labeling all files, processes, and resources on a system with security
+contexts. Policies define rules about how these labels can interact. When an
+action is attempted, SELinux checks the labels against the policies and either
+allows or denies the action based on the rules, enforcing least-privilege access.
+
+This document is too short to explain in detail how selinux works, but
+for containers management most important concepts are MCS
+(Multi-Category Security) and MLS (Multi-Level Security), described in
+RedHat docs: [link](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html-single/using_selinux/index#multi-level-security-mls_using-multi-level-security-mls)
+
+Selinux additionally secures the contenerized program, not allowing to access
+resources from outside. Container engines like Podman randomize categories by
+default, so for example 2 different containers cannot access the same volume.
+
+Proof of categories randomization by running subsequent containers and checking
+their selinux context:
+
+```bash
+❯ podman run --rm -it fedora-minimal cat /proc/self/attr/current
+system_u:system_r:container_t:s0:c340,c364
+~
+❯ podman run --rm -it fedora-minimal cat /proc/self/attr/current
+system_u:system_r:container_t:s0:c202,c993
+~
+❯ podman run --rm -it fedora-minimal cat /proc/self/attr/current
+system_u:system_r:container_t:s0:c259,c971
+```
+
