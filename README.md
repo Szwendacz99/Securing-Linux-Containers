@@ -25,7 +25,7 @@
   - [7. Network](#7-network)
     - [Desktop tools](#desktop-tools)
     - [Kubernetes](#kubernetes)
-  - [8. Images](#8-images)
+  - [8. OCI Images](#8-oci-images)
   - [8.1 Building](#81-building)
   - [8.2 Scanning](#82-scanning)
   - [9. Selinux](#9-selinux)
@@ -530,7 +530,7 @@ Images can be scanned for vulnerabilities. This is usefull for any type and
 source if images, since vulnerabilities appear even in the most basic
 components like language interpreters, libC libraries, etc. There are tools
 for manual scanning like [trivy](https://github.com/aquasecurity/trivy), and
-some registries like [Harbor](https://goharbor.io/) have builting optional 
+some registries like [Harbor](https://goharbor.io/) have builting optional
 automatic vulnerability scanning for any stored image.
 
 These tools can provide descriptive analysis of image contents, taking into
@@ -573,3 +573,65 @@ system_u:system_r:container_t:s0:c202,c993
 system_u:system_r:container_t:s0:c259,c971
 ```
 
+If two or more containers have matching categories (sorted categories on the same
+position match or are not set), then such containers can access the same
+shared volumes.
+
+For example (podman uses :Z flag on volume to propagate selinux context on
+all files inside):
+
+First starting container with 2 categories:
+
+```bash
+podman run --rm -it -v ./test:/test:Z --security-opt label=level:s0:c222,c11 fedora-minimal
+bash-5.2# ls -Z /test/
+system_u:object_r:container_file_t:s0:c11,c222 test2
+system_u:object_r:container_file_t:s0:c11,c222 test2.txt
+system_u:object_r:container_file_t:s0:c11,c222 test3.txt
+```
+
+Then second container with a subset of categories in selinux level will change
+the labels, but still both containers have full access to the volume:
+
+```bash
+podman run --rm -it -v ./test:/test:Z --security-opt label=level:s0:c11 fedora-minimal
+bash-5.2# ls -Z /test/
+system_u:object_r:container_file_t:s0:c11 test2 
+system_u:object_r:container_file_t:s0:c11 test2.txt
+system_u:object_r:container_file_t:s0:c11 test3.txt
+```
+
+Changing the level in second container to something like
+`label=level:s0:c11,c33` will prevent access for the first container.
+
+For shared volumes container engines like Podman or Docker have flag `:z`,
+which in contrast to `:Z` does not apply any categories, just plain level `s0`:
+
+```bash
+❯ podman run --rm -it -v ./test:/test:z fedora-minimal ls -Z /test
+system_u:object_r:container_file_t:s0 test2
+system_u:object_r:container_file_t:s0 test2.txt
+system_u:object_r:container_file_t:s0 test3.txt
+```
+
+This allows any container with any categories potentially access this volume.
+And this is place for improvement - if the files inside of a volume are
+main protected resource, it would be safer to label it with categories.
+If there are multiple containers that need access to the volume, they
+just need to have matching categories. This somewhat reduces isolation
+between those containers in terms of other filesystems and other resources
+protected by selinux, but that usually will be not much of a problem,
+considering they use shared volume.
+
+In kubernetes specifying labels happens for whole pod, which can have
+multiple containers:
+
+```yaml
+apiVersion: v1
+kind: Pod
+spec:
+  securityContext:
+    seLinuxOptions:
+      level: "s0:c12,c45"
+(....)
+```
